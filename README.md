@@ -17,7 +17,7 @@ The extracted frames should be appeared in `extracted_frames` folder by default.
 
 Then just run the main script and do annotate the video.
 ```
-python --source extracted_frames [--result-file RESULT_FILE]
+python main.py --source extracted_frames [--result-file RESULT_FILE]
 ```
 
 ## How it works
@@ -44,6 +44,7 @@ The keyboard shortcuts are listed as beflow:
 - `s`: Decrease track id.
 - `f`: Save results.
 - `e`: Enter edit mode.
+- `c`: Cancel edit mode.
 - `t`: Interpolate bounding boxes.
 - `r`: Remove next nearest anchor.
 - `j`: Fast move forward.

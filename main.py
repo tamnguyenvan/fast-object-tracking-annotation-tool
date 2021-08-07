@@ -21,6 +21,7 @@ class KeyEvent:
     UP = ord('w')
     DOWN = ord('s')
     REWIND = ord('0')
+    JUMP_END = ord('9')
     REMOVE = ord('r')
     UNDO = ord('u')
     SAVE = ord('f')
@@ -180,7 +181,6 @@ class Saver:
     
         anchor_bboxes = self.load_anchors(track_id)
         if len(anchor_bboxes) > 1:
-            # frame_indices = sorted(list(anchor_bboxes.keys()))
             frame_indices = list(anchor_bboxes.keys())
             num_anchors = len(frame_indices)
             for i in range(num_anchors - 1):
@@ -205,8 +205,7 @@ class Saver:
         """
         """
         # Delete the anchor
-        if track_id in self.track_anchors and len(self.track_anchors[track_id]) > 1:
-            # sorted_frame_indices = sorted(self.track_anchors[track_id].keys())
+        if track_id in self.track_anchors:
             sorted_frame_indices = list(self.track_anchors[track_id].keys())
             start_bin = np.digitize(frame_index, sorted_frame_indices)
             start_bin = min(max(0, start_bin), len(sorted_frame_indices) - 1)
@@ -278,6 +277,8 @@ class Controller:
             self.view.decrease_track_id()
         elif event == KeyEvent.REWIND:
             self.view.seek(0)
+        elif event == KeyEvent.JUMP_END:
+            self.view.seek(-1)
         elif event == KeyEvent.TOGGLE_EDIT:
             if self.view.state == ViewState.EDIT:
                 self.view.state = ViewState.VIEW
@@ -327,7 +328,6 @@ class Controller:
         """
         """
         latest_track_id = 1
-        # track_ids = sorted(list(self.model.track_dict.keys()))
         track_ids = list(self.model.track_dict.keys())
         if len(track_ids):
             return track_ids[-1]
@@ -369,7 +369,9 @@ class View:
         """Return valid index ranges in [0, num_frames-1]."""
         if 0 <= frame_index <= self.num_frames - 1:
             return frame_index
-        elif frame_index < 0:
+        elif frame_index == -1:
+            return self.num_frames - 1
+        elif frame_index < -1:
             return 0
         else:
             return self.num_frames - 1
@@ -396,7 +398,7 @@ class View:
     def prev(self, step=1):
         """
         """
-        self.frame_index = self._get_valid_index(self.frame_index - step)
+        self.frame_index = self._get_valid_index(max(0, self.frame_index - step))
     
     def seek(self, position=0):
         """
@@ -506,7 +508,8 @@ class View:
                 self.state == ViewState.EDIT
                 frame = self._render_title(frame)
                 roi = cv2.selectROI(ViewSettings.WINDOW_TITLE, frame, showCrosshair=False)
-                self.controller.add_anchor(self.frame_index, self.track_id, roi)
+                if sum(roi) > 0:
+                    self.controller.add_anchor(self.frame_index, self.track_id, roi)
                 self.state = ViewState.VIEW
             
             # Render frame
