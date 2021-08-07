@@ -171,12 +171,12 @@ class Saver:
         """
         """
         # Reset frame_dict
-        new_frame_dict = SortedDict({})
+        new_frame_dict = SortedDict()
         for fi, frame_data in self.frame_dict.items():
-            new_frame_dict[fi] = SortedDict({})
+            new_frame_dict[fi] = SortedDict()
             if track_id in frame_data:
                 del frame_data[track_id]
-                new_frame_dict[fi] = frame_data
+            new_frame_dict[fi] = frame_data
         self.frame_dict = new_frame_dict
     
         anchor_bboxes = self.load_anchors(track_id)
@@ -189,7 +189,7 @@ class Saver:
 
                 start_bbox = anchor_bboxes[start]
                 end_bbox = anchor_bboxes[end]
-                inter_bboxes = self._calc_inter_bbox(end - start, start_bbox, end_bbox)
+                inter_bboxes = self._calc_inter_bbox(end - start + 1, start_bbox, end_bbox)
                 for j, bbox in enumerate(inter_bboxes):
                     self.add_bbox(start + j, track_id, bbox)
 
@@ -460,7 +460,7 @@ class View:
             x, y, w, h = bbox
             centroid = int(x + w / 2), int(y + h / 2)
             centroids.append(centroid)
-            frame = self._draw_bboxes(frame, bbox, color)
+            frame = self._draw_bboxes(frame, bbox, color, self.track_id)
             frame = self._draw_centroid(frame, centroid, color)
 
         if len(centroids):
@@ -472,7 +472,7 @@ class View:
         """
         """
         text = 'Frame: {:06d} Track ID: {} Mode: {}'.format(
-            self.frame_index, self.track_id, self.state)
+            self.frame_index + 1, self.track_id, self.state)
         cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_PLAIN, 2.,
                     ViewSettings.TITLE_COLOR, ViewSettings.TITLE_THICKNESS)
         return frame
