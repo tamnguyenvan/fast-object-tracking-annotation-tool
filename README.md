@@ -21,9 +21,7 @@ python main.py --source extracted_frames [--result-file RESULT_FILE]
 ```
 
 ## How it works
-To reduce the annotation time, we will slice the whole video into segments in which the object moves nearly straight.
-So we can assign two anchors each segment. One at the beginning and the other at the end. Every single bounding box of the object in that
-segment would be interpolated linearly.
+We slice a person's trajectory to many pieces. In those piece, the person moves almost linearly.
 ```
 sx, sy, sw, sh -> the beginning bbox.
 ex, ey, ew, eh -> the end bbox
@@ -50,6 +48,8 @@ The keyboard shortcuts are listed as beflow:
 - `j`: Fast move forward.
 - `k`: Fast move backward.
 - `h`: Toggle all annotations.
+- `g`: Toggle all bounding boxes except the current id.
+- `m`: Remove all bounding boxes from the current frame.
 
 The annotatoin process can be like this.
 - 1. Enter edit mode.

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from sortedcontainers import SortedDict
+from sortedcontainers import SortedDict, SortedSet
 
 
 @dataclass
@@ -28,6 +28,8 @@ class KeyEvent:
     TRACK = ord('t')
     HIDE_ANCHORS = ord('h')
     HIDE_TRACKS = ord('g')
+    FREEZE = ord('p')
+    DELETE_TAIL = ord('m')
 
 
 @dataclass
@@ -53,6 +55,7 @@ class Saver:
         self.frame_dict = SortedDict()
         self.track_dict = SortedDict()
         self.track_anchors = SortedDict()
+        self.freezed_segments = {}
         self.undo_stack = []
 
     def setup(self):
@@ -62,7 +65,7 @@ class Saver:
         filename = Path(self.save_path).stem
         self.metadata_file = filename + '_metadata.pkl'
         self.frame_dict, self.track_dict = self.load()
-        self.track_anchors = self.load_metadata()
+        self.track_anchors, self.freezed_segments = self.load_metadata()
     
     def load(self):
         """
@@ -170,11 +173,21 @@ class Saver:
     def interpolate_bboxes(self, track_id):
         """
         """
+        # Freezed segments
+        freezed_segments = SortedSet()
+        if track_id in self.freezed_segments and len(self.freezed_segments[track_id]) > 1:
+            freezed_segments_data = self.freezed_segments[track_id]
+            n_segments = (len(freezed_segments_data) // 2) * 2
+            for i in range(0, n_segments, 2):
+                segment = SortedSet(range(freezed_segments_data[i], freezed_segments_data[i+1] + 1))
+                freezed_segments.update(segment)
+
         # Reset frame_dict
         new_frame_dict = SortedDict()
         for fi, frame_data in self.frame_dict.items():
+            # Do not delete these frame data
             new_frame_dict[fi] = SortedDict()
-            if track_id in frame_data:
+            if track_id in frame_data and fi not in freezed_segments:
                 del frame_data[track_id]
             new_frame_dict[fi] = frame_data
         self.frame_dict = new_frame_dict
@@ -191,7 +204,11 @@ class Saver:
                 end_bbox = anchor_bboxes[end]
                 inter_bboxes = self._calc_inter_bbox(end - start + 1, start_bbox, end_bbox)
                 for j, bbox in enumerate(inter_bboxes):
-                    self.add_bbox(start + j, track_id, bbox)
+                    # Do not reset these frame data
+                    fi = start + j
+                    if fi in freezed_segments:
+                        continue
+                    self.add_bbox(fi, track_id, bbox)
 
     def add_anchor(self, frame_index, track_id, bbox):
         """
@@ -233,16 +250,20 @@ class Saver:
         """
         """
         track_anchors = SortedDict()
+        freezed_segments = {}
         if os.path.isfile(self.metadata_file):
             with open(self.metadata_file, 'rb') as f:
-                return pkl.load(f)
-        return track_anchors
+                track_anchors = pkl.load(f)
+                freezed_segments = pkl.load(f)
+
+        return track_anchors, freezed_segments
     
     def save_metadata(self):
         """
         """
         with open(self.metadata_file, 'wb') as f:
             pkl.dump(self.track_anchors, f)
+            pkl.dump(self.freezed_segments, f)
 
 
 class Controller:
@@ -287,6 +308,12 @@ class Controller:
         elif event == KeyEvent.TRACK:
             self.model.interpolate_bboxes(self.view.track_id)
             self.view.state = ViewState.VIEW
+        elif event == KeyEvent.FREEZE:
+            track_id = self.view.track_id
+            if track_id not in self.model.freezed_segments:
+                self.model.freezed_segments[track_id] = SortedSet()
+            self.model.freezed_segments[track_id].add(self.view.frame_index)
+            print(self.model.freezed_segments)
         elif event == KeyEvent.HIDE_ANCHORS:
             self.view.is_hide_anchors = not self.view.is_hide_anchors
         elif event == KeyEvent.HIDE_TRACKS:
@@ -295,6 +322,10 @@ class Controller:
             if self.view.state == ViewState.VIEW:
                 self.model.delete_anchor(self.view.frame_index,
                                         self.view.track_id)
+        elif event == KeyEvent.DELETE_TAIL:
+            if self.view.state == ViewState.VIEW:
+                for frame_index in range(self.view.frame_index, self.view.num_frames):
+                    self.model.delete_bbox(frame_index, self.view.track_id)
         elif event == KeyEvent.UNDO:
             if self.view.state == ViewState.VIEW:
                 self.model.undo_delete_anchor(self.view.track_id)
