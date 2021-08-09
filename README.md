@@ -13,7 +13,7 @@ You need to extract frames from video file first.
 ```
 python extract.py --source VIDEO_FILE [--out-dir OUT_DIR]
 ```
-The extracted frames should be appeared in `extracted_frames` folder by default.
+The extracted frames should appear in `extracted_frames` folder by default.
 
 Then just run the main script and do annotate the video.
 ```
