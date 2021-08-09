@@ -7,7 +7,6 @@ from pathlib import Path
 
 import cv2
 import numpy as np
-from numpy.lib.function_base import delete
 from sortedcontainers import SortedDict
 
 
@@ -28,6 +27,7 @@ class KeyEvent:
     TOGGLE_EDIT = ord('e')
     TRACK = ord('t')
     HIDE_ANCHORS = ord('h')
+    HIDE_TRACKS = ord('g')
 
 
 @dataclass
@@ -67,8 +67,8 @@ class Saver:
     def load(self):
         """
         """
-        frame_dict = {}
-        track_dict = {}
+        frame_dict = SortedDict()
+        track_dict = SortedDict()
         if os.path.isfile(self.save_path):
             with open(self.save_path) as f:
                 for line in f:
@@ -289,6 +289,8 @@ class Controller:
             self.view.state = ViewState.VIEW
         elif event == KeyEvent.HIDE_ANCHORS:
             self.view.is_hide_anchors = not self.view.is_hide_anchors
+        elif event == KeyEvent.HIDE_TRACKS:
+            self.view.is_hide_tracks = not self.view.is_hide_tracks
         elif event == KeyEvent.REMOVE:
             if self.view.state == ViewState.VIEW:
                 self.model.delete_anchor(self.view.frame_index,
@@ -335,14 +337,15 @@ class Controller:
 
 
 class View:
-    def __init__(self, source):
-        self.track_id = 1
+    def __init__(self, source, start_id):
+        self.track_id = start_id
         self.frame_index = 0
         self.source = source
         self.state = ViewState.INITIAL
         self.segments = {}
         self.frame = None
         self.is_hide_anchors = False
+        self.is_hide_tracks = False
 
     def setup(self, controller):
         """Setup View initial state."""
@@ -352,7 +355,9 @@ class View:
         self.frame = self.load_frame()
 
         # Reassign track_id to the latest annotated id
-        self.track_id = controller.load_latest_track_id()
+        if not isinstance(self.track_id, int) or \
+            (isinstance(self.track_id, int) and self.track_id < 0):
+            self.track_id = controller.load_latest_track_id()
 
         # Colors for tracks
         self.colors = [tuple(map(int, color)) for color in np.random.randint(120, 250, (1000, 3))]
@@ -471,8 +476,9 @@ class View:
     def _render_title(self, frame):
         """
         """
-        text = 'Frame: {:06d} Track ID: {} Mode: {}'.format(
-            self.frame_index + 1, self.track_id, self.state)
+        max_track_id = self.controller.load_latest_track_id()
+        text = 'Frame: {:06d} Track ID: {} Mode: {} Max Track ID: {}'.format(
+            self.frame_index + 1, self.track_id, self.state, max_track_id)
         cv2.putText(frame, text, (50, 50), cv2.FONT_HERSHEY_PLAIN, 2.,
                     ViewSettings.TITLE_COLOR, ViewSettings.TITLE_THICKNESS)
         return frame
@@ -485,6 +491,8 @@ class View:
         # Draw bounding boxes if available
         track_data = self.controller.load_tracks(self.frame_index)
         for track_id, bbox in track_data.items():
+            if self.is_hide_tracks and track_id != self.track_id:
+                continue
             frame = self._draw_bboxes(frame, bbox, self.colors[track_id], track_id)
         
         cv2.imshow(ViewSettings.WINDOW_TITLE, frame)
@@ -525,6 +533,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--source', type=str, help='Path to source video.')
     parser.add_argument('--result-file', type=str, default='', help='The output file.')
+    parser.add_argument('--start-id', type=int, help='Track id at the beginning.')
     args = parser.parse_args()
 
     if args.result_file:
@@ -532,7 +541,7 @@ def main():
     else:
         result_file = Path(args.source).stem + '_result.txt'
     model = Saver(result_file)
-    view = View(args.source)
+    view = View(args.source, args.start_id)
     controller = Controller(model, view)
     controller.start()
 
