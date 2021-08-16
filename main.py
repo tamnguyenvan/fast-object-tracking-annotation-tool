@@ -7,6 +7,7 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+from numpy.core.fromnumeric import resize
 from sortedcontainers import SortedDict, SortedSet
 
 
@@ -254,7 +255,10 @@ class Saver:
         if os.path.isfile(self.metadata_file):
             with open(self.metadata_file, 'rb') as f:
                 track_anchors = pkl.load(f)
-                freezed_segments = pkl.load(f)
+                try:
+                    freezed_segments = pkl.load(f)
+                except:
+                    pass
 
         return track_anchors, freezed_segments
     
@@ -368,7 +372,7 @@ class Controller:
 
 
 class View:
-    def __init__(self, source, start_id):
+    def __init__(self, source, start_id, max_size):
         self.track_id = start_id
         self.frame_index = 0
         self.source = source
@@ -377,13 +381,14 @@ class View:
         self.frame = None
         self.is_hide_anchors = False
         self.is_hide_tracks = False
+        self.max_size = max_size
 
     def setup(self, controller):
         """Setup View initial state."""
         self.state = ViewState.VIEW
         self.controller = controller
         self.load_source()
-        self.frame = self.load_frame()
+        self.frame, self.scale = self.load_frame(return_scale=True)
 
         # Reassign track_id to the latest annotated id
         if not isinstance(self.track_id, int) or \
@@ -412,12 +417,38 @@ class View:
         else:
             return self.num_frames - 1
     
-    def load_frame(self):
+    def scale_bbox(self, bbox, scale=1.0):
+        """
+        """
+        return list(map(lambda x: int(x * scale), bbox))
+    
+    def resize_frame(self, frame):
+        """
+        """
+        height, width = frame.shape[:2]
+        new_height, new_width = height, width
+        scale = 1.0
+        if height > self.max_size or width > self.max_size:
+            if height > width:
+                scale = self.max_size / height
+                new_width = int(width * scale)
+                new_height = self.max_size
+            else:
+                scale = self.max_size / width
+                new_height = int(height * scale)
+                new_width = self.max_size
+        resized = cv2.resize(frame, (new_width, new_height), interpolation=cv2.INTER_CUBIC)
+        return resized, scale
+    
+    def load_frame(self, return_scale=False):
         """Load the current frame."""
         frame_index = self._get_valid_index(self.frame_index)
         frame_path = self.frame_paths[frame_index]
         if os.path.isfile(frame_path):
             image = cv2.imread(self.frame_paths[frame_index])
+            image, scale = self.resize_frame(image)
+            if return_scale:
+                return image, scale
             return image
     
     def load_source(self):
@@ -493,6 +524,8 @@ class View:
         anchor_bboxes = self.controller.load_anchors(self.track_id)
         centroids = []
         for _, bbox in anchor_bboxes.items():
+            # Downscale
+            bbox = self.scale_bbox(bbox, self.scale)
             x, y, w, h = bbox
             centroid = int(x + w / 2), int(y + h / 2)
             centroids.append(centroid)
@@ -522,6 +555,7 @@ class View:
         # Draw bounding boxes if available
         track_data = self.controller.load_tracks(self.frame_index)
         for track_id, bbox in track_data.items():
+            bbox = self.scale_bbox(bbox, self.scale)
             if self.is_hide_tracks and track_id != self.track_id:
                 continue
             frame = self._draw_bboxes(frame, bbox, self.colors[track_id], track_id)
@@ -533,6 +567,7 @@ class View:
     def start_main_loop(self):
         """
         """
+        cv2.namedWindow(ViewSettings.WINDOW_TITLE)
         while True:
             # Grab a frame
             self.frame = self.load_frame()
@@ -546,9 +581,10 @@ class View:
             if self.state == ViewState.EDIT:
                 self.state == ViewState.EDIT
                 frame = self._render_title(frame)
-                roi = cv2.selectROI(ViewSettings.WINDOW_TITLE, frame, showCrosshair=False)
-                if sum(roi) > 0:
-                    self.controller.add_anchor(self.frame_index, self.track_id, roi)
+                bbox = cv2.selectROI(ViewSettings.WINDOW_TITLE, frame, showCrosshair=False)
+                if sum(bbox) > 0:
+                    bbox = self.scale_bbox(bbox, 1 / self.scale)
+                    self.controller.add_anchor(self.frame_index, self.track_id, bbox)
                 self.state = ViewState.VIEW
             
             # Render frame
@@ -565,6 +601,8 @@ def main():
     parser.add_argument('--source', type=str, help='Path to source video.')
     parser.add_argument('--result-file', type=str, default='', help='The output file.')
     parser.add_argument('--start-id', type=int, help='Track id at the beginning.')
+    parser.add_argument('--max-size', type=int, default=1920,
+                        help='Maximum size of the display window.')
     args = parser.parse_args()
 
     if args.result_file:
@@ -572,7 +610,7 @@ def main():
     else:
         result_file = Path(args.source).stem + '_result.txt'
     model = Saver(result_file)
-    view = View(args.source, args.start_id)
+    view = View(args.source, args.start_id, args.max_size)
     controller = Controller(model, view)
     controller.start()
 
